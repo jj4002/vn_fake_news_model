@@ -155,21 +155,20 @@ class RAGService:
             query_text = f"{title} {content[:500]}"
             logger.info(f"🔍 RAG Query: {query_text[:100]}...")
 
-            # Normalize embedding
             query_embedding = self.embedding_model.encode(
                 query_text,
                 normalize_embeddings=True,
             )
 
-            # ✅ LOWER THRESHOLD TO 0.35
+            # ✅ TĂNG THRESHOLD LÊN 0.65 (chỉ lấy bài thực sự gần)
             results = self.supabase.search_similar_news(
                 query_embedding,
                 top_k=top_k,
-                threshold=0.35,  # ← LOWER threshold
+                threshold=0.65,
             )
 
-            if not results or len(results) == 0:
-                logger.warning("❌ No matching real news found (threshold: 0.35)")
+            if not results:
+                logger.info("❌ No matching real news found (threshold: 0.65)")
                 return {
                     "has_reliable_source": False,
                     "similarity_score": 0.0,
@@ -177,7 +176,6 @@ class RAGService:
                     "recommendation": "NO_RELIABLE_SOURCE_FOUND",
                 }
 
-            # Analyze results
             best_match = results[0]
             similarity = best_match.get("similarity", 0.0)
 
@@ -187,15 +185,15 @@ class RAGService:
             )
             logger.info(f"   Title: {best_match['title'][:80]}...")
 
-            # ✅ ADJUST THRESHOLDS
-            if similarity > 0.65:  # was 0.75
-                recommendation = "VERIFIED_REAL"
+            # ✅ CHỈ GIỮ 2 MỨC: VERIFIED_REAL và NEEDS_REVIEW
+            if similarity >= 0.8:
+                recommendation = "VERIFIED_REAL"     # rất giống
                 has_source = True
-            elif similarity > 0.45:  # was 0.60
-                recommendation = "NEEDS_REVIEW"
+            elif similarity >= 0.65:
+                recommendation = "NEEDS_REVIEW"      # hơi giống, chỉ nên giảm nhẹ
                 has_source = True
             else:
-                recommendation = "LOW_SIMILARITY"
+                recommendation = "NO_RELIABLE_SOURCE_FOUND"
                 has_source = False
 
             return {
@@ -213,6 +211,7 @@ class RAGService:
                 "matching_articles": [],
                 "recommendation": "NO_RELIABLE_SOURCE_FOUND",
             }
+
 
 
 

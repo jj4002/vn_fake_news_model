@@ -134,9 +134,7 @@ async def predict(request: PredictRequest):
         # ===================
         # RAG verification
         # ===================
-        if rag_service.should_use_rag(
-            title, content, base_result["confidence"], request.author_id or ""
-        ):
+        if rag_service.should_use_rag(title, content, base_result["confidence"], request.author_id or ""):
             logger.info("🔍 Running RAG verification...")
 
             verification = rag_service.verify_with_sources(title, content)
@@ -144,25 +142,22 @@ async def predict(request: PredictRequest):
             logger.info(f"   RAG result: {verification['recommendation']}")
             logger.info(f"   Similarity: {verification['similarity_score']:.2f}")
 
-            if verification["matching_articles"] and len(
-                verification["matching_articles"]
-            ) > 0:
+            if verification["matching_articles"]:
                 rag_used = True
                 method = "rag_enhanced"
 
-                # FORCE CORRECTION BASED ON SIMILARITY / RECOMMENDATION
                 similarity = verification["similarity_score"]
                 recommendation = verification["recommendation"]
 
                 if base_result["prediction"] == "FAKE":
                     logger.info(
-                        "🔍 Base prediction is FAKE, but found similar REAL news in database"
+                        "🔍 Base prediction is FAKE, checking RAG evidence..."
                     )
 
-                    if recommendation == "VERIFIED_REAL":  # ~ similarity > 0.65
+                    if recommendation == "VERIFIED_REAL":
+                        # Chỉ khi rất giống (>= 0.8) mới flip sang REAL
                         logger.warning("⚠️ VERIFIED_REAL → Switching to REAL")
-                        new_conf = 0.7 + (similarity - 0.6) * 0.5
-                        new_conf = min(1.0, max(0.7, new_conf))
+                        new_conf = max(0.7, min(0.95, 0.7 + (similarity - 0.8)))
                         final_result = {
                             "prediction": "REAL",
                             "confidence": new_conf,
@@ -175,12 +170,14 @@ async def predict(request: PredictRequest):
                             f"   Overridden to: REAL ({final_result['confidence']:.4f})"
                         )
 
-                    elif recommendation == "NEEDS_REVIEW":  # ~ 0.45–0.65
+                    elif recommendation == "NEEDS_REVIEW":
+                        # Giảm rất nhẹ, chỉ để báo “nên xem lại”
                         logger.warning(
-                            "⚠️ NEEDS_REVIEW → Reducing FAKE confidence"
+                            "⚠️ NEEDS_REVIEW → Slightly reducing FAKE confidence"
                         )
-                        reduction_factor = 0.3 + (0.6 - min(similarity, 0.6)) * 0.4
-                        adjusted_conf = base_result["confidence"] * reduction_factor
+                        adjusted_conf = max(
+                            0.5, base_result["confidence"] * 0.9
+                        )  # ví dụ 1.0 → 0.9
                         final_result = {
                             "prediction": "FAKE",
                             "confidence": adjusted_conf,
@@ -193,32 +190,14 @@ async def predict(request: PredictRequest):
                             f"   Reduced confidence: {base_result['confidence']:.4f} → "
                             f"{adjusted_conf:.4f}"
                         )
-
-                    elif recommendation == "LOW_SIMILARITY":  # ~ 0.35–0.45
-                        logger.info("   LOW_SIMILARITY → Small reduction for FAKE")
-                        adjusted_conf = base_result["confidence"] * 0.7
-                        final_result = {
-                            "prediction": "FAKE",
-                            "confidence": adjusted_conf,
-                            "probabilities": {
-                                "FAKE": adjusted_conf,
-                                "REAL": 1 - adjusted_conf,
-                            },
-                        }
-                        logger.info(
-                            f"   Reduced confidence: {base_result['confidence']:.4f} → "
-                            f"{adjusted_conf:.4f}"
-                        )
-
-                    else:  # NO_RELIABLE_SOURCE_FOUND
-                        logger.info("   No reliable source → Keep base prediction")
+                    else:
+                        logger.info("   No strong evidence → Keep base prediction")
                         final_result = base_result
 
                 elif base_result["prediction"] == "REAL":
-                    # Base is REAL, check if RAG confirms
-                    if recommendation in ("VERIFIED_REAL", "NEEDS_REVIEW"):
-                        logger.info("✅ Base REAL confirmed by RAG")
-                        boosted_conf = min(0.95, base_result["confidence"] * 1.1)
+                    if recommendation == "VERIFIED_REAL":
+                        logger.info("✅ Base REAL confirmed by RAG (strong)")
+                        boosted_conf = min(0.98, base_result["confidence"] * 1.1)
                         final_result = {
                             "prediction": "REAL",
                             "confidence": boosted_conf,
@@ -232,15 +211,12 @@ async def predict(request: PredictRequest):
                             f"{boosted_conf:.4f}"
                         )
                     else:
-                        logger.info("   RAG did not confirm → Keep base prediction")
+                        logger.info("   RAG did not strongly confirm → Keep base")
                         final_result = base_result
-
-                else:
-                    final_result = base_result
             else:
-                # No matching articles
                 logger.info("   No matching articles found, using base result")
                 final_result = base_result
+
 
         # Extract final prediction
         prediction = final_result["prediction"]

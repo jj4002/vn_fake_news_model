@@ -1,17 +1,20 @@
-version: '3.8'
-
 services:
-  backend:
+  # Main FastAPI Application
+  api:
     build: .
-    container_name: vn-fake-news-backend
+    container_name: tiktok-fakenews-api
     ports:
       - "8000:8000"
-    environment:
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - MODEL_PATH=./models/phobert_fakenews_int8.onnx
-      - TOKENIZER_PATH=./models/tokenizer
+    env_file:
+      - .env
     volumes:
       - ./models:/app/models
       - ./temp:/app/temp
+      - ./data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
