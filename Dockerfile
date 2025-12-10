@@ -1,55 +1,62 @@
-FROM python:3.11.9
+# Stage 1: Build dependencies
+FROM python:3.11-slim AS builder
 
-# Env
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive \
-    OMP_NUM_THREADS=1 \
-    KMP_AFFINITY=granularity \
-    KMP_BLOCKTIME=0
+WORKDIR /app
 
-# System deps
-RUN apt-get update && apt-get install -y \
+# Install system dependencies cho build
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     git \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libglib2.0-0 \
-    libsndfile1 \
-    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Workdir
+# Copy requirements (đã XÓA dòng torch ra khỏi file này)
+COPY requirement.txt .
+
+# Cài PyTorch CPU-only TRƯỚC (nhẹ hơn ~3GB so với CUDA)
+RUN pip install --no-cache-dir --user \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Cài các dependencies còn lại
+RUN pip install --no-cache-dir --user -r requirement.txt
+
+# Cài yt-dlp bản thường (không dùng nightly)
+RUN pip install --no-cache-dir --user -U yt-dlp
+
+# Stage 2: Runtime image
+FROM python:3.11-slim
+
 WORKDIR /app
 
-# Create runtime dirs (trước khi copy code)
-RUN mkdir -p models temp data
+# Cài runtime dependencies tối thiểu
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy ONLY requirements first (để cache pip install)
-COPY requirement.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirement.txt
+# Copy Python packages từ builder
+COPY --from=builder /root/.local /root/.local
 
-# Update yt-dlp to latest (TikTok extractor changes frequently)
-RUN pip install --no-cache-dir -U yt-dlp
-
-# Copy app code (để sau cùng, khi code thay đổi không ảnh hưởng pip install)
+# Copy source code
 COPY . .
 
-# Create non-root user and set ownership
+# Set PATH
+ENV PATH=/root/.local/bin:$PATH
+
+# Tạo thư mục cần thiết (bỏ data vì bạn đã xóa)
+RUN mkdir -p /app/models /app/temp
+
+# Create non-root user
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
+
 USER app
 
-# Expose port
 EXPOSE 8000
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD curl -fsS http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Run app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

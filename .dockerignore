@@ -56,7 +56,6 @@ tmp/
 *.tmp
 
 # Data files
-data/
 *.csv
 *.json
 *.jsonl

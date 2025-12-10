@@ -10,7 +10,6 @@ services:
     volumes:
       - ./models:/app/models
       - ./temp:/app/temp
-      - ./data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
