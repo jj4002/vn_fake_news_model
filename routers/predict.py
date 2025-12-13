@@ -93,26 +93,26 @@ async def predict(request: PredictRequest):
 
         content_parts = []
 
-        if request.ocr_text:
+        if request.ocr_text and len(request.ocr_text.strip()) > 10:
             ocr_fixed = request.ocr_text.strip()
             content_parts.append(ocr_fixed)
             logger.info(f"   OCR: {len(request.ocr_text)} chars")
-            logger.info(f"   OCR preview: {ocr_fixed[:100]}...")
 
-        if request.stt_text:
+        if request.stt_text and len(request.stt_text.strip()) > 50:  # STT ưu tiên
             stt_fixed = request.stt_text.strip()
             content_parts.append(stt_fixed)
             logger.info(f"   STT: {len(request.stt_text)} chars")
-            logger.info(f"   STT preview: {stt_fixed[:100]}...")
 
-        if not content_parts:
-            content = title
+        # ✅ FIX: Dùng content thực thay vì caption metadata
+        if content_parts:
+            content = " ".join(content_parts)[:2000]  # Giới hạn độ dài
+            title = content[:200]  # Title preview cho log
         else:
-            content = " ".join(content_parts)
+            content = request.caption
+            title = request.caption[:200]
 
-        # Log input
-        logger.info("📝 Input:")
-        logger.info(f"   Title: {title[:100]}...")
+        logger.info(f"📝 Input:")
+        logger.info(f"   Title preview: {title}...")
         logger.info(f"   Content length: {len(content)} chars")
         logger.info(f"   Content preview: {content[:150]}...")
 
