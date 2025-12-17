@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test ONNX Runtime</title>
+</head>
+
+<body>
+    <h1>Test ONNX Runtime Loading</h1>
+    <div id="result">Loading...</div>
+
+    <script src="onnxruntime-web.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async function () {
+            const resultDiv = document.getElementById('result');
+
+            try {
+                if (typeof ort !== 'undefined') {
+                    resultDiv.innerHTML = `
+                        <p style="color: green;">✅ ONNX Runtime loaded successfully!</p>
+                        <p>Version: ${ort.version}</p>
+                        <p>InferenceSession available: ${!!ort.InferenceSession}</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<p style="color: red;">❌ ONNX Runtime not available</p>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">❌ Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+
+</html>

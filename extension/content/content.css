@@ -1,0 +1,80 @@
+/* content/content.css - Styles for content script */
+
+/* Floating badge container */
+.tiktok-fakenews-badge {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 99999;
+    background: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    animation: slideInRight 0.3s ease;
+    max-width: 300px;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.tiktok-fakenews-badge.real {
+    border-left: 4px solid #00c853;
+}
+
+.tiktok-fakenews-badge.fake {
+    border-left: 4px solid #ff3d00;
+}
+
+.tiktok-fakenews-badge.uncertain {
+    border-left: 4px solid #ff9800;
+}
+
+.badge-label {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.badge-label.real {
+    color: #00c853;
+}
+
+.badge-label.fake {
+    color: #ff3d00;
+}
+
+.badge-label.uncertain {
+    color: #ff9800;
+}
+
+.badge-confidence {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.badge-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    color: #999;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+}
+
+.badge-close:hover {
+    color: #333;
+}

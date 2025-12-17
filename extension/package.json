@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@huggingface/tokenizers": "^0.0.5",
+    "onnxruntime-web": "^1.23.2"
+  }
+}
