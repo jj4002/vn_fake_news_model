@@ -59,7 +59,7 @@ SUPABASE_URL=https://ynkrpoozrpydjliuoxkw.supabase.co
 SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua3Jwb296cnB5ZGpsaXVveGt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTA0NDQsImV4cCI6MjA3OTk4NjQ0NH0.76YAmB0Ypi0hHLOYGtVL5AMLlAHWgU55khYt0wUlpX8
 
 # Model Configuration
-MODEL_PATH=./models/phobert_fakenews_int8.onnx
+MODEL_PATH=./models/han_rag_model.onnx
 ```
 
 ### Optional Configuration

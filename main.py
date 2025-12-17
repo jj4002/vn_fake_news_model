@@ -55,7 +55,7 @@ app.include_router(reports.router, prefix="/api/v1", tags=["Reports"])
 def root():
     return {
         "service": "TikTok Fake News Detection",
-        "version": "2.0.0",
+        "version": "2.2.2",
         "status": "online",
         "endpoints": {
             "predict": "/api/v1/predict",
@@ -67,7 +67,7 @@ def root():
 
 @app.get("/health")
 def health():
-    model_exists = os.path.exists(os.getenv("MODEL_PATH", "./models/phobert_fakenews_int8.onnx"))
+    model_exists = os.path.exists(os.getenv("MODEL_PATH", "./models/han_rag_model.onnx"))
     supabase_connected = bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_KEY"))
     
     return {

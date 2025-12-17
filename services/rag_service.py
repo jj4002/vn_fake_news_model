@@ -139,9 +139,7 @@ class RAGService:
         
         return False
     
-    def verify_with_sources(self, title: str, content: str, top_k: int = 5) -> Dict:
-        """Verify content với real news sources"""
-        
+    def verify_with_sources(self, title: str, content: str, top_chunk: str = None, top_k: int = 5) -> Dict:
         if not self.available:
             return {
                 "has_reliable_source": False,
@@ -151,58 +149,74 @@ class RAGService:
             }
         
         try:
-            # Generate query embedding
-            query_text = f"{title} {content[:500]}"
-            logger.info(f"🔍 RAG Query: {query_text[:100]}...")
-
+            # Query generation (giữ nguyên)
+            if top_chunk and len(top_chunk.strip()) > 20:
+                query_text = f"{title} {top_chunk}"
+                logger.info(f"🔍 RAG Query: Using title + top chunk")
+            else:
+                query_text = f"{title} {content[:500]}"
+                logger.info(f"🔍 RAG Query: Using title + content preview (fallback)")
+            
+            query_text = query_text[:1000]
             query_embedding = self.embedding_model.encode(
                 query_text,
                 normalize_embeddings=True,
             )
-
-            # ✅ TĂNG THRESHOLD LÊN 0.65 (chỉ lấy bài thực sự gần)
+            
+            # ========================================
+            # FIX: TĂNG THRESHOLD LÊN 0.75
+            # ========================================
             results = self.supabase.search_similar_news(
                 query_embedding,
                 top_k=top_k,
-                threshold=0.65,
+                threshold=0.75,  # ← THAY ĐỔI TỪ 0.65 → 0.75
             )
-
+            
             if not results:
-                logger.info("❌ No matching real news found (threshold: 0.65)")
+                logger.info("❌ No matching real news found (threshold: 0.75)")
                 return {
                     "has_reliable_source": False,
                     "similarity_score": 0.0,
                     "matching_articles": [],
                     "recommendation": "NO_RELIABLE_SOURCE_FOUND",
                 }
-
+            
             best_match = results[0]
             similarity = best_match.get("similarity", 0.0)
-
+            
             logger.info(f"✅ Found {len(results)} matching articles")
-            logger.info(
-                f"   Best match: {best_match['source']} (similarity: {similarity:.2f})"
-            )
+            logger.info(f"   Best match: {best_match['source']} (similarity: {similarity:.2f})")
             logger.info(f"   Title: {best_match['title'][:80]}...")
-
-            # ✅ CHỈ GIỮ 2 MỨC: VERIFIED_REAL và NEEDS_REVIEW
-            if similarity >= 0.8:
-                recommendation = "VERIFIED_REAL"     # rất giống
+            
+            # ========================================
+            # FIX: RECOMMENDATION LOGIC MỚI
+            # ========================================
+            
+            # Tier 1: Very High Confidence (0.85+)
+            if similarity >= 0.85:
+                recommendation = "VERIFIED_REAL"
                 has_source = True
-            elif similarity >= 0.65:
-                recommendation = "NEEDS_REVIEW"      # hơi giống, chỉ nên giảm nhẹ
+                logger.info("   ✅ VERIFIED_REAL (similarity ≥ 0.85)")
+            
+            # Tier 2: High Confidence (0.75-0.85)
+            elif similarity >= 0.75:
+                recommendation = "NEEDS_REVIEW"
                 has_source = True
+                logger.info("   ⚠️ NEEDS_REVIEW (0.75 ≤ similarity < 0.85)")
+            
+            # Tier 3: Below threshold
             else:
                 recommendation = "NO_RELIABLE_SOURCE_FOUND"
                 has_source = False
-
+                logger.info("   ❌ NO_RELIABLE_SOURCE (similarity < 0.75)")
+            
             return {
                 "has_reliable_source": has_source,
                 "similarity_score": similarity,
                 "matching_articles": results[:3],
                 "recommendation": recommendation,
             }
-
+        
         except Exception as e:
             logger.error(f"❌ RAG verification error: {e}", exc_info=True)
             return {
@@ -212,11 +226,6 @@ class RAGService:
                 "recommendation": "NO_RELIABLE_SOURCE_FOUND",
             }
 
-
-
-
-
-    
     def retrieve_context(self, title: str, content: str, top_k: int = 3) -> Optional[str]:
         """Retrieve similar news articles (legacy method)"""
         
