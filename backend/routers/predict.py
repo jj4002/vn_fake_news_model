@@ -28,6 +28,11 @@ class PredictRequest(BaseModel):
     author_id: Optional[str] = None
 
 
+class TextPredictRequest(BaseModel):
+    text: str
+    author_id: Optional[str] = None
+
+
 class PredictResponse(BaseModel):
     video_id: str
     prediction: str
@@ -154,8 +159,8 @@ async def predict(request: PredictRequest):
                 if base_result["prediction"] == "REAL":
                     logger.info("✅ Base REAL, checking RAG confirmation...")
                     
-                    if recommendation == "VERIFIED_REAL" and similarity >= 0.85:
-                        logger.info(f"✅ VERIFIED_REAL (similarity {similarity:.2f} ≥ 0.85)")
+                    if recommendation == "VERIFIED_REAL" and similarity >= 0.8:
+                        logger.info(f"✅ VERIFIED_REAL (similarity {similarity:.2f} ≥ 0.8)")
                         method = "rag_enhanced"
                         boosted_conf = min(0.98, base_result["confidence"] * 1.15)
                         final_result = {
@@ -174,10 +179,10 @@ async def predict(request: PredictRequest):
                 elif base_result["prediction"] == "FAKE":
                     logger.info("🔍 Base FAKE, checking RAG evidence...")
                     
-                    if recommendation == "VERIFIED_REAL" and similarity >= 0.85:
-                        logger.warning("⚠️ VERIFIED_REAL (≥0.85) → Switching to REAL")
+                    if recommendation == "VERIFIED_REAL" and similarity >= 0.8:
+                        logger.warning("⚠️ VERIFIED_REAL (≥0.8) → Switching to REAL")
                         method = "rag_enhanced"
-                        new_conf = max(0.7, min(0.95, 0.7 + (similarity - 0.85) * 3))
+                        new_conf = max(0.7, min(0.95, 0.7 + (similarity - 0.8) * 3))
                         final_result = {
                             "prediction": "REAL",
                             "confidence": new_conf,
@@ -265,4 +270,166 @@ async def predict(request: PredictRequest):
         raise
     except Exception as e:
         logger.error(f"❌ Prediction error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/predict-text", response_model=PredictResponse)
+async def predict_text(request: TextPredictRequest):
+    """
+    Phân tích trực tiếp một đoạn text (không lưu database, vẫn dùng RAG nếu cần)
+    """
+    start = time.time()
+
+    try:
+        logger.info("=" * 70)
+        logger.info("📥 NEW TEXT REQUEST")
+
+        text = (request.text or "").strip()
+        if not text:
+            logger.error("❌ Invalid input: Empty text")
+            raise HTTPException(status_code=400, detail="Text is required")
+
+        # Ở đây coi toàn bộ text là title + content
+        title = text[:200]
+        content = text
+
+        logger.info("📝 Text Input:")
+        logger.info(f"   Preview: {text[:120]}...")
+        logger.info(f"   Length: {len(text)} chars")
+
+        # BASE PREDICTION
+        logger.info("🤖 Running base model (text)...")
+        base_result = model.predict(
+            title=title,
+            content=content
+        )
+
+        logger.info(f"   Base result: {base_result['prediction']} ({base_result['confidence']:.4f})")
+        logger.info(
+            "   Probabilities: REAL=%.4f, FAKE=%.4f",
+            base_result["probabilities"]["REAL"],
+            base_result["probabilities"]["FAKE"],
+        )
+
+        # RAG VERIFICATION (giống luồng /predict nhưng không lưu DB)
+        rag_used = False
+        method = "base_model"
+        final_result = base_result
+
+        if rag_service.should_use_rag(
+            title,
+            content,
+            base_result["confidence"],
+            request.author_id or "",
+        ):
+            logger.info("🔍 Running RAG verification for text...")
+
+            top_chunk = base_result.get("top_chunk", "")
+            verification = rag_service.verify_with_sources(
+                title=title,
+                content=content,
+                top_chunk=top_chunk,
+            )
+
+            logger.info(f"   RAG result: {verification['recommendation']}")
+            logger.info(f"   Similarity: {verification['similarity_score']:.2f}")
+
+            if verification["matching_articles"]:
+                rag_used = True
+                top_article = verification["matching_articles"][0]
+                logger.info(f"   Top match: {top_article['source']}")
+                logger.info(f"   Title: {top_article['title'][:80]}...")
+
+                similarity = verification["similarity_score"]
+                recommendation = verification["recommendation"]
+
+                if base_result["prediction"] == "REAL":
+                    logger.info("✅ Base REAL, checking RAG confirmation (text)...")
+
+                    if recommendation == "VERIFIED_REAL" and similarity >= 0.8:
+                        logger.info(f"✅ VERIFIED_REAL (similarity {similarity:.2f} ≥ 0.8)")
+                        method = "rag_enhanced"
+                        boosted_conf = min(0.98, base_result["confidence"] * 1.15)
+                        final_result = {
+                            "prediction": "REAL",
+                            "confidence": boosted_conf,
+                            "probabilities": {
+                                "REAL": boosted_conf,
+                                "FAKE": 1 - boosted_conf,
+                            },
+                        }
+                        logger.info(
+                            "   Boosted: %.4f → %.4f",
+                            base_result["confidence"],
+                            boosted_conf,
+                        )
+                    else:
+                        logger.info("   RAG did not strongly confirm → Keep base (text)")
+                        final_result = base_result
+
+                elif base_result["prediction"] == "FAKE":
+                    logger.info("🔍 Base FAKE, checking RAG evidence (text)...")
+
+                    if recommendation == "VERIFIED_REAL" and similarity >= 0.8:
+                        logger.warning("⚠️ VERIFIED_REAL (≥0.8) → Switching to REAL (text)")
+                        method = "rag_enhanced"
+                        new_conf = max(0.7, min(0.95, 0.7 + (similarity - 0.8) * 3))
+                        final_result = {
+                            "prediction": "REAL",
+                            "confidence": new_conf,
+                            "probabilities": {
+                                "REAL": new_conf,
+                                "FAKE": 1 - new_conf,
+                            },
+                        }
+                        logger.info("   Overridden to REAL (text): %.4f", new_conf)
+
+                    elif recommendation == "NEEDS_REVIEW" and similarity >= 0.75:
+                        logger.warning("⚠️ NEEDS_REVIEW → Reducing FAKE confidence (text)")
+                        adjusted_conf = max(0.55, base_result["confidence"] * 0.95)
+                        final_result = {
+                            "prediction": "FAKE",
+                            "confidence": adjusted_conf,
+                            "probabilities": {
+                                "FAKE": adjusted_conf,
+                                "REAL": 1 - adjusted_conf,
+                            },
+                        }
+                        logger.info("   Adjusted (text): %.4f", adjusted_conf)
+                    else:
+                        logger.info("   No strong evidence → Keep base (text)")
+                        final_result = base_result
+            else:
+                logger.info("   No matching articles found → Using base result (text)")
+                final_result = base_result
+
+        prediction = final_result["prediction"]
+        confidence = final_result["confidence"]
+        probabilities = final_result["probabilities"]
+
+        logger.info("📊 Final text result:")
+        logger.info("   Prediction: %s", prediction)
+        logger.info("   Confidence: %.4f", confidence)
+        logger.info("   Method: %s", method)
+        logger.info("   RAG used: %s", rag_used)
+
+        processing_time = (time.time() - start) * 1000
+        logger.info("✅ Completed text analysis in %.0fms", processing_time)
+        logger.info("=" * 70)
+
+        # video_id trả về giá trị giả để UI không bị lỗi nhưng không dùng đến
+        return PredictResponse(
+            video_id="TEXT_INPUT",
+            prediction=prediction,
+            confidence=confidence,
+            method=method,
+            rag_used=rag_used,
+            probabilities=probabilities,
+            processing_time_ms=processing_time,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Text prediction error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

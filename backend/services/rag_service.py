@@ -146,7 +146,7 @@ class RAGService:
         trusted_sources = ['vnexpress', 'vtv', 'vov', '60giay', 'thuvienphapluat']
         is_trusted = any(source in author_id.lower() for source in trusted_sources)
         
-        if not is_trusted and base_confidence > 0.85:
+        if not is_trusted and base_confidence > 0.8:
             logger.info("RAG triggered: Unknown source with high confidence")
             return True
         
@@ -162,10 +162,29 @@ class RAGService:
             }
         
         try:
-            # Query generation (giữ nguyên)
+            # Query generation với overlap chunk từ top_chunk (nếu có)
             if top_chunk and len(top_chunk.strip()) > 20:
-                query_text = f"{title} {top_chunk}"
-                logger.info(f"🔍 RAG Query: Using title + top chunk")
+                raw_chunk = top_chunk.strip()
+
+                # Chia top_chunk thành nhiều đoạn chồng lấn nhau để bắt được nhiều ngữ cảnh hơn
+                window_size = 300   # số ký tự mỗi cửa sổ
+                overlap = 100       # số ký tự chồng lấn
+                max_windows = 3     # chỉ lấy tối đa 3 cửa sổ để query không quá dài
+
+                windows = []
+                start = 0
+                while start < len(raw_chunk) and len(windows) < max_windows:
+                    end = min(len(raw_chunk), start + window_size)
+                    windows.append(raw_chunk[start:end])
+                    if end >= len(raw_chunk):
+                        break
+                    start = end - overlap
+
+                query_text = f"{title} " + " ".join(windows)
+                logger.info(
+                    "🔍 RAG Query: Using title + overlap chunks from top_chunk "
+                    f"(len={len(raw_chunk)}, windows={len(windows)})"
+                )
             else:
                 query_text = f"{title} {content[:500]}"
                 logger.info(f"🔍 RAG Query: Using title + content preview (fallback)")
@@ -205,17 +224,17 @@ class RAGService:
             # FIX: RECOMMENDATION LOGIC MỚI
             # ========================================
             
-            # Tier 1: Very High Confidence (0.85+)
-            if similarity >= 0.85:
+            # Tier 1: Very High Confidence (0.8+)
+            if similarity >= 0.80:
                 recommendation = "VERIFIED_REAL"
                 has_source = True
-                logger.info("   ✅ VERIFIED_REAL (similarity ≥ 0.85)")
+                logger.info("   ✅ VERIFIED_REAL (similarity ≥ 0.80)")
             
-            # Tier 2: High Confidence (0.75-0.85)
+            # Tier 2: High Confidence (0.75-0.8)
             elif similarity >= 0.75:
                 recommendation = "NEEDS_REVIEW"
                 has_source = True
-                logger.info("   ⚠️ NEEDS_REVIEW (0.75 ≤ similarity < 0.85)")
+                logger.info("   ⚠️ NEEDS_REVIEW (0.75 ≤ similarity < 0.8)")
             
             # Tier 3: Below threshold
             else:

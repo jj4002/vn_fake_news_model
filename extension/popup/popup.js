@@ -10,9 +10,33 @@ document.addEventListener('DOMContentLoaded', function () {
     console.log('✅ Popup loaded');
 
     const analyzeBtn = document.getElementById('analyzeBtn');
+    const analyzeTextBtn = document.getElementById('analyzeTextBtn');
+    const manualTextInput = document.getElementById('manualTextInput');
     const resultDiv = document.getElementById('result');
     const reportBtn = document.getElementById('reportBtn');
     const reportSection = document.getElementById('reportSection');
+
+    // Nếu có text được gửi từ context menu, tự fill và auto phân tích
+    try {
+        chrome.storage.local.get(['selectedTextForCheck'], (data) => {
+            const selectedText = (data && data.selectedTextForCheck) || '';
+            if (selectedText && manualTextInput) {
+                console.log('📝 Found selected text from context menu');
+                manualTextInput.value = selectedText;
+
+                // Clear để lần sau không auto lại
+                chrome.storage.local.remove('selectedTextForCheck');
+
+                // Tự động bấm nút phân tích text nếu chưa chạy gì
+                if (!isAnalyzing && analyzeTextBtn) {
+                    console.log('▶ Auto analyzing selected text from context menu');
+                    analyzeTextBtn.click();
+                }
+            }
+        });
+    } catch (e) {
+        console.warn('⚠️ Cannot read selectedTextForCheck from storage:', e);
+    }
 
     // Analyze button
     analyzeBtn.addEventListener('click', async () => {
@@ -125,41 +149,108 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // Analyze plain text button
+    analyzeTextBtn.addEventListener('click', async () => {
+        if (isAnalyzing) {
+            console.warn('⚠️ Already analyzing, ignoring click');
+            return;
+        }
+
+        const text = (manualTextInput.value || '').trim();
+        if (!text) {
+            showError('❌ Vui lòng dán đoạn văn bản cần kiểm tra.');
+            return;
+        }
+
+        // Reset state
+        currentVideoData = null;
+        resultDiv.className = 'result';
+        resultDiv.innerHTML = '';
+        reportSection.style.display = 'none';
+
+        console.log('🔍 Analyze TEXT clicked');
+        isAnalyzing = true;
+
+        // Show loading
+        showLoading();
+        analyzeTextBtn.disabled = true;
+        analyzeTextBtn.textContent = '⏳ Đang phân tích text...';
+
+        try {
+            const prediction = await analyzeTextInput(text);
+            console.log('📥 Text result:', prediction);
+            displayResult(prediction);
+        } catch (error) {
+            console.error('❌ Text analyze error:', error);
+            showError('❌ Lỗi: ' + error.message);
+        } finally {
+            analyzeTextBtn.disabled = false;
+            analyzeTextBtn.textContent = 'Phân tích đoạn văn bản này';
+            isAnalyzing = false;
+        }
+    });
+
     // Report button
     reportBtn.addEventListener('click', async () => {
-        if (!currentVideoData) return;
+        if (!currentVideoData) {
+            alert('❌ Không có dữ liệu video. Vui lòng phân tích trước.');
+            return;
+        }
+
+        // ✅ KIỂM TRA CÓ PREDICTION CHƯA
+        if (!currentVideoData.prediction) {
+            alert('❌ Chưa có kết quả phân tích. Vui lòng phân tích video trước.');
+            return;
+        }
 
         const reason = prompt('Tại sao bạn nghĩ kết quả này sai?\n(Tùy chọn - có thể để trống)');
 
-        // User cancelled
         if (reason === null) return;
 
         try {
             reportBtn.disabled = true;
             reportBtn.textContent = '⏳ Đang gửi...';
 
+            // ✅ CHUẨN BỊ DATA
+            const reportData = {
+                video_id: currentVideoData.video_id,
+                reported_prediction: currentVideoData.prediction,  // ✅ SỬA TỪ result.prediction
+                reason: reason || null
+            };
+
+            // ✅ DEBUG LOG
+            console.log('📤 Sending report:', reportData);
+            console.log('   video_id:', reportData.video_id);
+            console.log('   reported_prediction:', reportData.reported_prediction);
+            console.log('   reason:', reportData.reason);
+
             const response = await fetch(`${API_BASE_URL}/report`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    video_id: currentVideoData.video_id,
-                    reported_prediction: result.prediction,
-                    reason: reason || null
-                })
+                body: JSON.stringify(reportData)
             });
 
             if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Report success:', data);
                 alert('✅ Cảm ơn phản hồi của bạn!\nChúng tôi sẽ xem xét và cải thiện model.');
                 reportSection.style.display = 'none';
             } else {
                 const errorData = await response.json();
-                console.error('Report failed:', errorData);
-                alert('❌ Không thể gửi báo cáo. Vui lòng thử lại sau.');
+                console.error('❌ Report failed:', errorData);
+
+                // ✅ HIỂN THỊ CHI TIẾT LỖI
+                if (errorData.detail) {
+                    console.error('   Detail:', errorData.detail);
+                    alert(`❌ Lỗi: ${JSON.stringify(errorData.detail)}`);
+                } else {
+                    alert('❌ Không thể gửi báo cáo. Vui lòng thử lại sau.');
+                }
             }
 
         } catch (error) {
-            console.error('Report error:', error);
-            alert('❌ Lỗi kết nối. Vui lòng thử lại.');
+            console.error('❌ Report error:', error);
+            alert('❌ Lỗi kết nối: ' + error.message);
         } finally {
             reportBtn.disabled = false;
             reportBtn.textContent = '⚠️ Báo cáo kết quả sai';
@@ -238,6 +329,38 @@ async function analyzeTikTokVideo(data) {
     }
 }
 
+// ===== API CALL FOR PLAIN TEXT =====
+async function analyzeTextInput(text) {
+    try {
+        if (!text || text.trim().length === 0) {
+            throw new Error('Text trống');
+        }
+
+        console.log('🤖 Getting prediction for text...');
+        const response = await fetch(`${API_BASE_URL}/predict-text`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: text,
+                author_id: null
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `API error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('✅ Text prediction:', result);
+        return result;
+
+    } catch (error) {
+        console.error('❌ Text prediction error:', error);
+        throw error;
+    }
+}
+
 
 // ===== UI FUNCTIONS =====
 
@@ -246,7 +369,7 @@ function showLoading() {
     resultDiv.className = 'result show loading';
     resultDiv.innerHTML = `
         <div class="loading-spinner"></div>
-        <p>Đang phân tích video...</p>
+        <p>Đang phân tích...</p>
         <p style="font-size: 11px; color: #999; margin-top: 5px;">
             Có thể mất 5-10 giây
         </p>
@@ -335,7 +458,7 @@ function displayResult(result) {
     if (method === 'cached') {
         html += `
             <div class="video-info" style="color: #ff9800; margin-top: 8px;">
-                📦 Kết quả đã được phân tích trước đó
+                📦 Kết quả từ cache (đã phân tích trước đó)
             </div>
         `;
     }
