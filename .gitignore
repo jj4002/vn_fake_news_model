@@ -1,2 +1,10 @@
 backend/.env.*
 backend/.env
+backend/node_modules
+backend/package-lock.json
+backend/yarn.lock
+backend/dist
+backend/venv
+backend/models
+backend/routers/__pycache__/*.pyc
+backend/services/__pycache__/*.pyc
