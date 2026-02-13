@@ -1,0 +1,20 @@
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: ${DOCKERFILE_NAME:-Dockerfile} # Mặc định dùng Dockerfile (CPU)
+    container_name: vn-fake-news-detector
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/.env:/app/.env:ro
+      - ./backend/uploads:/app/uploads
+      - ./backend/logs:/app/logs
+    # Phần dành cho GPU (Sẽ chỉ kích hoạt nếu máy có driver nvidia)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

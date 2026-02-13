@@ -99,6 +99,7 @@ class QueryGenerator:
         # Query 3: Key content only (fallback for short titles with hashtags)
         if clean_content:
             key_sentences = self.chunker.extract_key_sentences(clean_content, top_k=3)
+            key_sentences = key_sentences[:800]  # Limit to 800 chars
             if key_sentences and len(key_sentences.strip()) > 20:
                 queries.append((key_sentences, 1.0))
 

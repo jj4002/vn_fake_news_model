@@ -1,0 +1,42 @@
+# GPU Dockerfile for NVIDIA CUDA support
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Install Python and system deps with error handling
+RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-pip \
+    python3.11-dev \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libgl1 \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+
+# Python symlinks
+RUN ln -s /usr/bin/python3.11 /usr/bin/python && \
+    ln -s /usr/bin/pip3.11 /usr/bin/pip
+
+WORKDIR /app
+
+# Copy requirements and install Python deps with PyTorch CUDA
+COPY backend/requirement.txt .
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 && \
+    pip install -r requirement.txt
+
+# Copy application files (excluding models)
+COPY backend/ .
+
+# Create directories for uploads and models
+RUN mkdir -p /app/uploads /app/logs /app/models
+
+EXPOSE 8000
+
+# Download models at startup and start app
+CMD ["sh", "-c", "python download_models.py && uvicorn main:app --host 0.0.0.0 --port 8000"]

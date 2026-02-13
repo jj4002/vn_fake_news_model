@@ -1,0 +1,28 @@
+# 1. Loại bỏ các thư mục rác của hệ thống/IDE
+.git
+.gitignore
+.vscode
+.idea
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.aws
+node_modules
+*.md
+*.log
+*.zip
+
+# 2. Loại bỏ các phần không liên quan đến Backend
+dataset/
+crawl/
+train/
+extension/
+
+# 3. Loại bỏ các file nặng/tạm trong backend
+backend/venv/
+backend/models/*
+backend/logs/
+backend/*.log
+backend/temp/
