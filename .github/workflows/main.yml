@@ -27,7 +27,7 @@ jobs:
     - name: 🏗️ Build & Push
       uses: docker/build-push-action@v6
       with:
-        context: ./backend  # Thư mục chứa Dockerfile
+        context: .  # Thư mục chứa Dockerfile
         push: ${{ github.event_name != 'pull_request' }}  # Chỉ push khi merge main
         tags: |
           jamus0702/vn_fake_news_model:latest
