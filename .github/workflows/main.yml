@@ -30,7 +30,7 @@ jobs:
         context: ./backend  # Thư mục chứa Dockerfile
         push: ${{ github.event_name != 'pull_request' }}  # Chỉ push khi merge main
         tags: |
-          jamus0702/fake-news-detector:latest
-          jamus0702/fake-news-detector:${{ github.sha }}
+          jamus0702/vn_fake_news_model:latest
+          jamus0702/vn_fake_news_model:${{ github.sha }}
         cache-from: type=gha  # Cache build nhanh hơn
         cache-to: type=gha,mode=max
